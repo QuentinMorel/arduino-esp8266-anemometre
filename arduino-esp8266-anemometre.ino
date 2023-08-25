@@ -1,3 +1,8 @@
+#include "WiFiCreds.h"
+#include "dataServer.h"
+#include "ESP8266WiFi.h" 
+#include <PubSubClient.h>
+
 const byte AnemometrePin        = D7;    // PIN de connexion de l'anémomêtre.
 unsigned int anemometreCnt      = 0;     // Initialisation du compteur.
 unsigned long lastSendVent      = 0;     // Millis du dernier envoi (permet de récupérer l'intervale réel, et non la valeur de souhait).
@@ -8,14 +13,74 @@ unsigned int anemometreOld      = 0;     // Mise en mémoire du relevé "anemome
 #define INTERO_VENT 10                  // Valeur de l'intervale en secondes entre 2 relevés des capteurs Vent.
 #define INTERO_RAF 2                  // Valeur de l'intervale en secondes entre 2 relevés des capteurs Vent pour les rafales.
 
+char vitesseVentStr[10];
+char vitesseRafaleStr[10];
 
 ICACHE_RAM_ATTR void cntAnemometre() {
   anemometreCnt++;
 }
 
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+// Connect WiFi
+void setup_wifi() {
+  delay(10);
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(wifi_ssid);
+
+  WiFi.begin(wifi_ssid, wifi_password);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("");
+  Serial.println("WiFi connexion OK ");
+  Serial.print("=> Addresse IP : ");
+  Serial.print(WiFi.localIP());
+}
+
+void callback(char* topic, byte* payload, unsigned int length) {
+ 
+  Serial.print("Message arrived in topic: ");
+  Serial.println(topic);
+ 
+  Serial.print("Message:");
+  for (int i = 0; i < length; i++) {
+    Serial.print((char)payload[i]);
+  }
+}
+
+void reconnect() {
+  // Loop until we're reconnected
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    // Attempt to connect
+    if (client.connect("ESP8266Client", mqtt_username, mqtt_password)) {
+      Serial.println("connected");
+      // Subscribe
+      client.subscribe("esp32/wind_sensor");
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" try again in 5 seconds");
+      // Wait 
+      delay(5000);
+    }
+  }
+}
+
 void setup() {
   Serial.begin(115200);
   Serial.println("Initialisation...");
+  setup_wifi();
+  delay(2000);
+  client.setServer(mqtt_server, 1883);
+  client.setCallback(callback);
+  delay(2000);
   
   // Initialisation du PIN et création de l'interruption.
   pinMode(AnemometrePin, INPUT_PULLUP);          // Montage PullUp avec Condensateur pour éviter l'éffet rebond.
@@ -26,6 +91,10 @@ void setup() {
 }
 
 void loop() {
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.loop();
   // On reléve la rafale de vent des 5 dernières secondes.
   if (millis() - t_lastRafaleVent >= (INTERO_RAF * 1000)) {
     // On met à jour la valeur du dernier traitement de Rafale de vent à maintenant.
@@ -70,6 +139,12 @@ void getSendVitesseVent() {
   // On affiche la vitesse du vent.
   Serial.print("Vitesse du vent = "); Serial.println(vitesseVent,1); 
   Serial.print("Rafale du vent = "); Serial.println(vitesseRafale,1); 
+
+  // send mqtt message
+  dtostrf(vitesseVent, 1, 1, vitesseVentStr);
+  dtostrf(vitesseRafale, 1, 1, vitesseRafaleStr);
+  client.publish("esp32/wind_sensor", vitesseVentStr, true);
+  client.publish("esp32/wind_sensor_rafale", vitesseRafaleStr, true);
 }
 
 void getRafale() {
