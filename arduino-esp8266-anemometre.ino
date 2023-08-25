@@ -1,66 +1,52 @@
-unsigned long  next_timestamp = 0;
-volatile unsigned long i = 0;
-float wind = 0;
-float last_wind = 0;
-int count = 0;
-volatile unsigned long last_micros;
-long debouncing_time = 5; //in millis
-int input_pin = 13;
-char charBuffer[32];
+const byte AnemometrePin        = D7;    // PIN de connexion de l'anémomêtre.
+unsigned int anemometreCnt      = 0;     // Initialisation du compteur.
+unsigned long lastSendVent      = 0;     // Millis du dernier envoi.
+unsigned long t_lastActionVent  = 0;     // enregistre le Time de la dernière intérogation des capteurs vent.
+#define INTERO_VENT 2                  // Valeur de l'intervale en secondes entre 2 relevés des capteurs Vent.
 
-const bool debugOutput = true;  // set to true for serial OUTPUT
 
-/*************************************************/
-/* Settings for number of reed contacts in       */
-/* abenometer                                    */
-/*************************************************/
-const float number_reed = 4;
-
-void ICACHE_RAM_ATTR Interrupt()
-{
-  if((long)(micros() - last_micros) >= debouncing_time * 1000) {
-    i++;
-    last_micros = micros();
-  }
+ICACHE_RAM_ATTR void cntAnemometre() {
+  anemometreCnt++;
+  // Serial.println("Action... ");
 }
 
 void setup() {
   Serial.begin(115200);
-  delay(10);
-  pinMode(input_pin, INPUT_PULLUP);//D7
+  Serial.println("Initialisation...");
+  
+  // Initialisation du PIN et création de l'interruption.
+  pinMode(AnemometrePin, INPUT_PULLUP);          // Montage PullUp avec Condensateur pour éviter l'éffet rebond.
+  attachInterrupt(digitalPinToInterrupt(AnemometrePin), cntAnemometre, FALLING); // CHANGE: Déclenche de HIGH à LOW ou de LOW à HIGH - FALLING : HIGH à LOW - RISING : LOW à HIGH.
 
-    attachInterrupt(input_pin,Interrupt,RISING);
+   // On initialise lastSend à maintenant.
+   lastSendVent = millis();
 }
 
-
-void loop() 
-{
-  if (millis() > next_timestamp )    
-  { 
-    detachInterrupt(input_pin);
-    count++; 
-    float rps = i/number_reed; //computing rounds per second 
-    if(i == 0)
-      wind = 0.0;
-    else
-      wind = 1.761 / (1 + rps) + 3.013 * rps;// found here: https://www.amazon.de/gp/customer-reviews/R3C68WVOLJ7ZTO/ref=cm_cr_getr_d_rvw_ttl?ie=UTF8&ASIN=B0018LBFG8 (in German)
-    if(last_wind - wind > 0.8 || last_wind - wind < -0.8 || count >= 10){
-      if(debugOutput){
-        Serial.print("Wind: ");
-        Serial.print(wind);
-        Serial.println(" km/h");
-      }
-      String strBuffer;
-      strBuffer =  String(wind);
-      strBuffer.toCharArray(charBuffer,10);
-      
-      count = 0;
-    }
-    i = 0;
-    last_wind = wind;
-   
-    next_timestamp  = millis()+1000; //intervall is 1s
-    attachInterrupt(input_pin,Interrupt,RISING);
+void loop() {
+    // On vérifie si l'intervale d'envoi des informations "Vent" sont atteintes. (120s)
+  if (millis() - t_lastActionVent >= INTERO_VENT * 1000) {
+    // On met à jour la valeur du dernier traitement à maintenant.
+    t_lastActionVent = millis();
+    
+    // On a atteint l'interval souhaité, on exécute le traitement Vent.
+    getSendVitesseVent();
   }
-  yield();
+}
+
+void getSendVitesseVent() {
+  // On effectue le calcul de la vitesse du vent.
+  Serial.println("Execution de la fonction getSendVitesseVent().");
+  // On initialise lastSendVent à maintenant.
+  int temps_sec = (millis() - lastSendVent) / 1000;
+  lastSendVent = millis();
+  Serial.print("Temps pour le calcul = "); Serial.print(temps_sec); Serial.println(" sec");
+  Serial.print("Nombre de déclenchement = "); Serial.println(anemometreCnt);
+
+  // On calcul la vitesse du vent
+  float vitesseVent = (((float)anemometreCnt / 2) / (float)temps_sec) * 2.4;    // Vitesse du vent en km/h = (Nbre de tour / temps de comptage en sec) * 2,4
+  vitesseVent       = round(vitesseVent * 10) / 10;               // On tranforme la vitesse du vent à 1 décimale.
+  anemometreCnt     = 0;                                          // On réinitialise le compteur à 0.
+
+  // On affiche la vitesse du vent.
+  Serial.print("Vitesse du vent = "); Serial.println(vitesseVent,1); 
 }
