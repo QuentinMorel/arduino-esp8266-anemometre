@@ -57,10 +57,10 @@ void callback(char* topic, byte* payload, unsigned int length) {
 void reconnect() {
   // Loop until we're reconnected
   while (!client.connected()) {
-    Serial.print("Attempting MQTT connection...");
+    // Serial.print("Attempting MQTT connection...");
     // Attempt to connect
     if (client.connect("ESP8266Client", mqtt_username, mqtt_password)) {
-      Serial.println("connected");
+      // Serial.println("connected");
       // Subscribe
       client.subscribe("esp32/wind_sensor");
     } else {
@@ -124,11 +124,11 @@ void getSendVitesseVent() {
   // Serial.print("Nombre de déclenchement = "); Serial.println(anemometreCnt);
 
   // On calcul la vitesse du vent.
-  float vitesseVent = (((float)anemometreCnt / 2) / (float)temps_sec) * 2.4;    // Vitesse du vent en km/h = (Nbre de tour / temps de comptage en sec) * 2,4
+  float vitesseVent = (((float)anemometreCnt) / (float)temps_sec) * 1.75 / 20 * 3.6;    // Vitesse du vent en km/h = (Nbre de tour / temps de comptage en sec) * 2,4
   vitesseVent       = round(vitesseVent * 10) / 10;                             // On tranforme la vitesse du vent à 1 décimale.
 
   // On calcul la vitesse de la rafale.
-  float vitesseRafale = (((float)rafalecnt / 2) / INTERO_RAF) * 2.4;                     // Vitesse du vent en km/h = (Nbre de tour / temps de comptage en sec) * 2,4
+  float vitesseRafale = (((float)rafalecnt) / INTERO_RAF) * 1.75 / 20 * 3.6;                     // Vitesse du vent en km/h = (Nbre de tour / temps de comptage en sec) * 2,4
   vitesseRafale       = round(vitesseRafale * 10) / 10;                         // On tranforme la vitesse du vent à 1 décimale.
 
   // On réinitialise les compteurs.
