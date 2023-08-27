@@ -24,9 +24,9 @@ char vitesseVentStr[10];
 char vitesseRafaleStr[10];
 
 // Rain sensor
-const byte rainPin = D2;
-const byte rainPowerPin = D4;
-int rainStatus = 0;
+const byte rainPin = D5;
+const byte rainPowerPin = D6;
+// int rainStatus = 0;
 
 
 ICACHE_RAM_ATTR void cntAnemometre() {
@@ -123,7 +123,7 @@ void loop() {
   client.loop();
   
   // RAIN SENSOR
-  rainStatus = readRainSensor();
+  int rainStatus = readRainSensor();
 	Serial.print("Digital Output: ");
 	Serial.println(rainStatus);
 
