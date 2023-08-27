@@ -3,6 +3,10 @@
 #include "ESP8266WiFi.h" 
 #include <PubSubClient.h>
 
+#define analogPin A0 
+int battery = 0;
+int batteryPct = 0;
+
 const byte AnemometrePin        = D7;    // PIN de connexion de l'anémomêtre.
 unsigned int anemometreCnt      = 0;     // Initialisation du compteur.
 unsigned long lastSendVent      = 0;     // Millis du dernier envoi (permet de récupérer l'intervale réel, et non la valeur de souhait).
@@ -15,6 +19,7 @@ unsigned int anemometreOld      = 0;     // Mise en mémoire du relevé "anemome
 
 char vitesseVentStr[10];
 char vitesseRafaleStr[10];
+char batteryPctStr[10];
 
 ICACHE_RAM_ATTR void cntAnemometre() {
   anemometreCnt++;
@@ -112,6 +117,14 @@ void loop() {
     // On a atteint l'interval souhaité, on exécute le traitement Vent.
     getSendVitesseVent();
   }
+  battery = analogRead(analogPin);
+ 
+  batteryPct = static_cast<int>((battery-820)/(1024-820)*(100-0)); // interpolation linéaire 1v = 1024 (100%), 0.8v = 820 (0%)
+  Serial.print("% batterie = "); Serial.println(batteryPct,1);
+  dtostrf(batteryPct, 1, 1, batteryPctStr);
+  client.publish("esp32/pct_batterie", batteryPctStr, true);
+  delay(2000);
+
 }
 
 void getSendVitesseVent() {
