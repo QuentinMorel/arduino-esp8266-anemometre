@@ -3,11 +3,14 @@
 #include "ESP8266WiFi.h" 
 #include <PubSubClient.h>
 
+// Battery voltage monitoring
 #define analogPin A0 
 int battery = 0;
 int batteryPct = 0;
+char batteryPctStr[10];
 
-const byte AnemometrePin        = D7;    // PIN de connexion de l'anémomêtre.
+// Anemometre
+const byte anemometrePin        = D7;    // PIN de connexion de l'anémomêtre.
 unsigned int anemometreCnt      = 0;     // Initialisation du compteur.
 unsigned long lastSendVent      = 0;     // Millis du dernier envoi (permet de récupérer l'intervale réel, et non la valeur de souhait).
 unsigned long t_lastActionVent  = 0;     // enregistre le Time de la dernière intérogation des capteurs vent.
@@ -19,7 +22,12 @@ unsigned int anemometreOld      = 0;     // Mise en mémoire du relevé "anemome
 
 char vitesseVentStr[10];
 char vitesseRafaleStr[10];
-char batteryPctStr[10];
+
+// Rain sensor
+const byte rainPin = D2;
+const byte rainPowerPin = D4;
+int rainStatus = 0;
+
 
 ICACHE_RAM_ATTR void cntAnemometre() {
   anemometreCnt++;
@@ -78,6 +86,15 @@ void reconnect() {
   }
 }
 
+//  This function returns the sensor output
+int readRainSensor() {
+	digitalWrite(rainPowerPin, HIGH);	// Turn the sensor ON
+	delay(10);							// Allow power to settle
+	int val = digitalRead(rainPin);	// Read the sensor output
+	digitalWrite(rainPowerPin, LOW);		// Turn the sensor OFF
+	return val;							// Return the value
+}
+
 void setup() {
   Serial.begin(115200);
   Serial.println("Initialisation...");
@@ -88,11 +105,15 @@ void setup() {
   delay(2000);
   
   // Initialisation du PIN et création de l'interruption.
-  pinMode(AnemometrePin, INPUT_PULLUP);          // Montage PullUp avec Condensateur pour éviter l'éffet rebond.
-  attachInterrupt(digitalPinToInterrupt(AnemometrePin), cntAnemometre, FALLING); // CHANGE: Déclenche de HIGH à LOW ou de LOW à HIGH - FALLING : HIGH à LOW - RISING : LOW à HIGH.
+  pinMode(anemometrePin, INPUT_PULLUP);          // Montage PullUp avec Condensateur pour éviter l'éffet rebond.
+  attachInterrupt(digitalPinToInterrupt(anemometrePin), cntAnemometre, FALLING); // CHANGE: Déclenche de HIGH à LOW ou de LOW à HIGH - FALLING : HIGH à LOW - RISING : LOW à HIGH.
 
    // On initialise lastSend à maintenant.
    lastSendVent = millis();
+
+	// Initially keep the sensor OFF
+  pinMode(rainPowerPin, OUTPUT);
+	digitalWrite(rainPowerPin, LOW);
 }
 
 void loop() {
@@ -100,6 +121,20 @@ void loop() {
     reconnect();
   }
   client.loop();
+  
+  // RAIN SENSOR
+  rainStatus = readRainSensor();
+	Serial.print("Digital Output: ");
+	Serial.println(rainStatus);
+
+	// Determine status of rain
+	if (rainStatus) {
+		Serial.println("Status: Clear");
+	} else {
+		Serial.println("Status: It's raining");
+	}
+
+  // WIND SENSOR  
   // On reléve la rafale de vent des 5 dernières secondes.
   if (millis() - t_lastRafaleVent >= (INTERO_RAF * 1000)) {
     // On met à jour la valeur du dernier traitement de Rafale de vent à maintenant.
