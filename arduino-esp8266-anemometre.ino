@@ -7,7 +7,7 @@
 #define analogPin A0 
 int battery = 0;
 int batteryPct = 0;
-char batteryPctStr[10];
+char batteryPctStr[15];
 
 // Anemometre
 const byte anemometrePin        = D7;    // PIN de connexion de l'anémomêtre.
@@ -26,7 +26,7 @@ char vitesseRafaleStr[10];
 // Rain sensor
 const byte rainPin = D5;
 const byte rainPowerPin = D6;
-// int rainStatus = 0;
+char rainStatusStr[10];
 
 
 ICACHE_RAM_ATTR void cntAnemometre() {
@@ -129,10 +129,14 @@ void loop() {
 
 	// Determine status of rain
 	if (rainStatus) {
+    String("Pas de pluie").toCharArray(rainStatusStr, 15);
 		Serial.println("Status: Clear");
 	} else {
 		Serial.println("Status: It's raining");
+    String("Pluie").toCharArray(rainStatusStr, 15);
 	}
+
+  client.publish("esp32/rain_status", rainStatusStr, true);
 
   // WIND SENSOR  
   // On reléve la rafale de vent des 5 dernières secondes.
