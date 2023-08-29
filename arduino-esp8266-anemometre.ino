@@ -3,31 +3,30 @@
 #include "ESP8266WiFi.h" 
 #include <PubSubClient.h>
 
-// Battery voltage monitoring
+// Power Pin: pour alimenter les capteurs uniquement pour la prise de mesure
+#define powerPinAnemometre D8
+#define powerPinRain D6
+
+// Suivi du voltage des la pile
 #define analogPin A0 
 int battery = 0;
-int batteryPct = 0;
+float batteryPct = 0;
 char batteryPctStr[15];
 
 // Anemometre
-const byte anemometrePin        = D7;    // PIN de connexion de l'anémomêtre.
-unsigned int anemometreCnt      = 0;     // Initialisation du compteur.
-unsigned long lastSendVent      = 0;     // Millis du dernier envoi (permet de récupérer l'intervale réel, et non la valeur de souhait).
-unsigned long t_lastActionVent  = 0;     // enregistre le Time de la dernière intérogation des capteurs vent.
-unsigned long t_lastRafaleVent  = 0;     // Enregistre le Time du dernier relevé de Rafale de vent.
-unsigned int rafalecnt          = 0;     // Compteur pour le calcul des rafales de vent.
-unsigned int anemometreOld      = 0;     // Mise en mémoire du relevé "anemometreCnt" pour calcul de Rafale.
-#define INTERO_VENT 10                  // Valeur de l'intervale en secondes entre 2 relevés des capteurs Vent.
-#define INTERO_RAF 2                  // Valeur de l'intervale en secondes entre 2 relevés des capteurs Vent pour les rafales.
-
+#define anemometrePin D7    // PIN de connexion de l'anémomêtre.
+unsigned int timeMeasureWind = 3; // Valeur de l'intervale en secondes entre 2 relevés des capteurs Vent.
+unsigned int anemometreCnt = 0;     // Initialisation du compteur.
+unsigned long lastSendVent = 0;     // Millis du dernier envoi (permet de récupérer l'intervale réel, et non la valeur de souhait).
 char vitesseVentStr[10];
-char vitesseRafaleStr[10];
+char tmpStr[10];
 
-// Rain sensor
-const byte rainPin = D5;
-const byte rainPowerPin = D6;
+// Détecteur de pluie
+#define rainPin D5
 char rainStatusStr[10];
 
+// Temps de deep sleep entre les mesures
+int sleepTimeS = 10; // wait (seconds)
 
 ICACHE_RAM_ATTR void cntAnemometre() {
   anemometreCnt++;
@@ -86,132 +85,146 @@ void reconnect() {
   }
 }
 
+void readSendBatteryState() {
+  if (!client.connected()) {
+    reconnect();
+  }
+  battery = analogRead(analogPin);
+  batteryPct = ((battery-820.0)/(1024.0-820.0)*(100.0-0.0)); // interpolation linéaire 1v = 1024 (100%), 0.8v = 820 (0%)
+  Serial.print("batterie = "); Serial.println(battery,1);
+  Serial.print("% batterie = "); Serial.println(batteryPct,1);
+  dtostrf(batteryPct, 1, 1, batteryPctStr);
+  client.publish("esp32/pct_batterie", batteryPctStr, true);
+
+  dtostrf(battery, 1, 1, tmpStr);
+  client.publish("esp32/tmp", tmpStr, true);
+}
+
 //  This function returns the sensor output
-int readRainSensor() {
-	digitalWrite(rainPowerPin, HIGH);	// Turn the sensor ON
-	delay(10);							// Allow power to settle
-	int val = digitalRead(rainPin);	// Read the sensor output
-	digitalWrite(rainPowerPin, LOW);		// Turn the sensor OFF
-	return val;							// Return the value
+void readSendRainSensor() {
+  if (!client.connected()) {
+    reconnect();
+  }
+	digitalWrite(powerPinRain, HIGH);	// Turn the sensor ON
+	delay(10);
+	int rainStatus = digitalRead(rainPin);	// Read the sensor output
+	digitalWrite(powerPinRain, LOW);		// Turn the sensor OFF
+	Serial.print("Digital Output: ");
+	Serial.println(rainStatus);
+
+	// Determine le statut
+	if (rainStatus) {
+    String("0").toCharArray(rainStatusStr, 15);
+		Serial.println("Status: Clear");
+    client.publish("esp32/rain_status_str", "Pas de pluie", true);
+	} else {
+		Serial.println("Status: It's raining");
+    client.publish("esp32/rain_status_str", "Pluie", true);
+    String("1").toCharArray(rainStatusStr, 15);
+	}
+  client.publish("esp32/rain_status", rainStatusStr, true);
+}
+
+void readSendAnemometer() {
+  digitalWrite(powerPinAnemometre, HIGH);	// Turn the sensor ON
+	delay(10);
+
+  // Initialisation du PIN et création de l'interruption.
+  pinMode(anemometrePin, INPUT_PULLUP);          // Montage PullUp avec Condensateur pour éviter l'éffet rebond.
+  attachInterrupt(digitalPinToInterrupt(anemometrePin), cntAnemometre, FALLING); // CHANGE: Déclenche de HIGH à LOW ou de LOW à HIGH - FALLING : HIGH à LOW - RISING : LOW à HIGH.
+
+  lastSendVent = millis();
+
+  delay(timeMeasureWind * 1000);
+
+  int temps_sec = (millis() - lastSendVent) / 1000;
+  
+  Serial.print("Temps pour le calcul = "); Serial.print(temps_sec); Serial.println(" sec");
+
+  // On calcul la vitesse du vent.
+  float vitesseVent = (((float)anemometreCnt) / (float)temps_sec) * 1.75 / 20 * 3.6;    // Vitesse du vent en km/h = (Nbre de tour / temps de comptage en sec) * 2,4
+  vitesseVent = round(vitesseVent * 10) / 10;                             // On tranforme la vitesse du vent à 1 décimale.
+
+  digitalWrite(powerPinAnemometre, LOW);	// Turn the sensor OFF
+  
+  // On réinitialise les compteurs.
+  anemometreCnt = 0;                                          // Envoi des données, On réinitialise le compteur de vent à 0.
+  
+  
+  // send mqtt message
+  dtostrf(vitesseVent, 1, 1, vitesseVentStr);
+  // On affiche la vitesse du vent.
+  Serial.print("Vitesse du vent = "); Serial.println(vitesseVent,1);
+
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.publish("esp32/wind_sensor", vitesseVentStr, true);
+  
 }
 
 void setup() {
+  Serial.println("\n\nWake up");
+  // Connect D0 to RST to wake up
+  pinMode(D0, WAKEUP_PULLUP);
+  delay(2000);
+
   Serial.begin(115200);
+
+  // Alimentation des capteurs anémomètre et pluie sur OFF
+  pinMode(powerPinRain, OUTPUT);
+	digitalWrite(powerPinRain, LOW);
+
+  pinMode(powerPinAnemometre, OUTPUT);
+	digitalWrite(powerPinAnemometre, LOW);
+
+  // Initialisation Wifi et MQTT
   Serial.println("Initialisation...");
   setup_wifi();
   delay(2000);
   client.setServer(mqtt_server, 1883);
   client.setCallback(callback);
   delay(2000);
-  
+ 
   // Initialisation du PIN et création de l'interruption.
   pinMode(anemometrePin, INPUT_PULLUP);          // Montage PullUp avec Condensateur pour éviter l'éffet rebond.
   attachInterrupt(digitalPinToInterrupt(anemometrePin), cntAnemometre, FALLING); // CHANGE: Déclenche de HIGH à LOW ou de LOW à HIGH - FALLING : HIGH à LOW - RISING : LOW à HIGH.
 
-   // On initialise lastSend à maintenant.
-   lastSendVent = millis();
+  ///// Batterie: lecture et envoi sur serveur MQTT de l'état de charge
+  readSendBatteryState();
+  delay(2000);
+  
+  ////// Anémomètre: lecture et envoi sur serveur MQTT
+  readSendAnemometer();
+  delay(2000);
+  
+  ////// Détecteur de pluie: lecture et envoi sur serveur MQTT
+  readSendRainSensor();
+  delay(2000);
 
-	// Initially keep the sensor OFF
-  pinMode(rainPowerPin, OUTPUT);
-	digitalWrite(rainPowerPin, LOW);
-}
-
-void loop() {
+     
   if (!client.connected()) {
     reconnect();
   }
-  client.loop();
   
-  // RAIN SENSOR
-  int rainStatus = readRainSensor();
-	Serial.print("Digital Output: ");
-	Serial.println(rainStatus);
-
-	// Determine status of rain
-	if (rainStatus) {
-    String("Pas de pluie").toCharArray(rainStatusStr, 15);
-		Serial.println("Status: Clear");
-	} else {
-		Serial.println("Status: It's raining");
-    String("Pluie").toCharArray(rainStatusStr, 15);
-	}
-
-  client.publish("esp32/rain_status", rainStatusStr, true);
-
-  // WIND SENSOR  
-  // On reléve la rafale de vent des 5 dernières secondes.
-  if (millis() - t_lastRafaleVent >= (INTERO_RAF * 1000)) {
-    // On met à jour la valeur du dernier traitement de Rafale de vent à maintenant.
-    t_lastRafaleVent = millis();
-    
-    // On a atteint l'interval souhaité, on exécute le traitement Vent.
-    getRafale();
+  for(int i=0; i<20; i++)
+  {
+    client.loop();  //Ensure we've sent & received everything
+    delay(100);
   }
   
-  // On vérifie si l'intervale d'envoi des informations "Vent" sont atteintes. (120s)
-  if (millis() - t_lastActionVent >= (INTERO_VENT * 1000)) {
-    // On met à jour la valeur du dernier traitement de l'anémometre à maintenant.
-    t_lastActionVent = millis();
-    
-    // On a atteint l'interval souhaité, on exécute le traitement Vent.
-    getSendVitesseVent();
-  }
-  battery = analogRead(analogPin);
- 
-  batteryPct = static_cast<int>((battery-820)/(1024-820)*(100-0)); // interpolation linéaire 1v = 1024 (100%), 0.8v = 820 (0%)
-  Serial.print("% batterie = "); Serial.println(batteryPct,1);
-  dtostrf(batteryPct, 1, 1, batteryPctStr);
-  client.publish("esp32/pct_batterie", batteryPctStr, true);
+  /* Close MQTT client cleanly */
+  client.disconnect();
+  WiFi.disconnect( true );
+  
+  Serial.printf("Sleep for %d seconds\n\n", sleepTimeS);
+
   delay(2000);
 
+  // convert to microseconds
+  ESP.deepSleep(sleepTimeS * 1000000);
 }
 
-void getSendVitesseVent() {
-  // On effectue le calcul de la vitesse du vent.
-  // Serial.println("Execution de la fonction getSendVitesseVent().");
-  // On initialise lastSendVent à maintenant.
-  int temps_sec = (millis() - lastSendVent) / 1000;
-  lastSendVent = millis();
-  // Serial.print("Temps pour le calcul = "); Serial.print(temps_sec); Serial.println(" sec");
-  // Serial.print("Nombre de déclenchement = "); Serial.println(anemometreCnt);
-
-  // On calcul la vitesse du vent.
-  float vitesseVent = (((float)anemometreCnt) / (float)temps_sec) * 1.75 / 20 * 3.6;    // Vitesse du vent en km/h = (Nbre de tour / temps de comptage en sec) * 2,4
-  vitesseVent       = round(vitesseVent * 10) / 10;                             // On tranforme la vitesse du vent à 1 décimale.
-
-  // On calcul la vitesse de la rafale.
-  float vitesseRafale = (((float)rafalecnt) / INTERO_RAF) * 1.75 / 20 * 3.6;                     // Vitesse du vent en km/h = (Nbre de tour / temps de comptage en sec) * 2,4
-  vitesseRafale       = round(vitesseRafale * 10) / 10;                         // On tranforme la vitesse du vent à 1 décimale.
-
-  // On réinitialise les compteurs.
-  anemometreCnt     = 0;                                          // Envoi des données, On réinitialise le compteur de vent à 0.
-  anemometreOld     = 0;                                          // Envoi des données, On réinitialise le compteur de mémoire à 0.
-  rafalecnt         = 0;                                          // Envoi des données, On réinitialise le compteur de Rafale à 0.
-
-  // On affiche la vitesse du vent.
-  Serial.print("Vitesse du vent = "); Serial.println(vitesseVent,1); 
-  Serial.print("Rafale du vent = "); Serial.println(vitesseRafale,1); 
-
-  // send mqtt message
-  dtostrf(vitesseVent, 1, 1, vitesseVentStr);
-  dtostrf(vitesseRafale, 1, 1, vitesseRafaleStr);
-  client.publish("esp32/wind_sensor", vitesseVentStr, true);
-  client.publish("esp32/wind_sensor_rafale", vitesseRafaleStr, true);
+void loop() {
 }
 
-void getRafale() {
-  // Relevé et comparaison du relevé précédent.
-  // Serial.println("Execution de la fonction getRafale().");
-  // On calcul le nombre d'impulsion sur les 5 dernières secondes.
-  int compteur = anemometreCnt - anemometreOld;
-  // On vérifie si la rafale est supérieure à la précédente.
-  // Serial.print(compteur); Serial.print(" = "); Serial.print(anemometreCnt); Serial.print(" - "); Serial.println(anemometreOld); 
-  // On stock la nouvelle valeur comme étant l'ancienne pour le prochain traitement.
-  anemometreOld = anemometreCnt;
-  // On vérifie si la rafale est supérieure à la précédente.
-  if (compteur > rafalecnt) {
-    // La rafale est supérieure, on enregistre l'information.
-    rafalecnt = compteur;
-    // Serial.print("Nouvelle valeur de rafale : "); Serial.println(rafalecnt);
-  }
-}
