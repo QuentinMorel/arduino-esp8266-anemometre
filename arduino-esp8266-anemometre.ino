@@ -26,7 +26,7 @@ char tmpStr[10];
 char rainStatusStr[10];
 
 // Temps de deep sleep entre les mesures
-int sleepTimeS = 10; // wait (seconds)
+int sleepTimeS = 30; // wait (seconds)
 
 ICACHE_RAM_ATTR void cntAnemometre() {
   anemometreCnt++;
@@ -93,10 +93,10 @@ void readSendBatteryState() {
   batteryPct = ((battery-820.0)/(1024.0-820.0)*(100.0-0.0)); // interpolation linéaire 1v = 1024 (100%), 0.8v = 820 (0%)
   Serial.print("batterie = "); Serial.println(battery,1);
   Serial.print("% batterie = "); Serial.println(batteryPct,1);
-  dtostrf(batteryPct, 1, 1, batteryPctStr);
+  dtostrf(batteryPct, 1, 0, batteryPctStr);
   client.publish("esp32/pct_batterie", batteryPctStr, true);
 
-  dtostrf(battery, 1, 1, tmpStr);
+  dtostrf(battery, 1, 0, tmpStr);
   client.publish("esp32/tmp", tmpStr, true);
 }
 
@@ -152,7 +152,7 @@ void readSendAnemometer() {
   
   
   // send mqtt message
-  dtostrf(vitesseVent, 1, 1, vitesseVentStr);
+  dtostrf(vitesseVent, 1, 0, vitesseVentStr);
   // On affiche la vitesse du vent.
   Serial.print("Vitesse du vent = "); Serial.println(vitesseVent,1);
 
