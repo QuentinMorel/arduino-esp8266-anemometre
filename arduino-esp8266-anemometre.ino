@@ -3,30 +3,30 @@
 #include "ESP8266WiFi.h" 
 #include <PubSubClient.h>
 
-// Power Pin: pour alimenter les capteurs uniquement pour la prise de mesure
+// Power Pin: to power the sensors only during the measurement
 #define powerPinAnemometre D8
 #define powerPinRain D6
 
-// Suivi du voltage des la pile
+// Battery monitoring
 #define analogPin A0 
 int battery = 0;
 float batteryPct = 0;
 char batteryPctStr[15];
 
-// Anemometre
-#define anemometrePin D7    // PIN de connexion de l'anémomêtre.
-unsigned int timeMeasureWind = 3; // Valeur de l'intervale en secondes entre 2 relevés des capteurs Vent.
-unsigned int anemometreCnt = 0;     // Initialisation du compteur.
-unsigned long lastSendVent = 0;     // Millis du dernier envoi (permet de récupérer l'intervale réel, et non la valeur de souhait).
+// Anemometer
+#define anemometrePin D7    // PIN anemometer (blue wire)
+unsigned int timeMeasureWind = 3; // Value of the time interval in seconds between two wind sensor readings
+unsigned int anemometreCnt = 0;     // Initialization of the counter.
+unsigned long lastSendVent = 0;     // Millis of the last sent
 char vitesseVentStr[10];
 char tmpStr[10];
 
-// Détecteur de pluie
+// Rain detector
 #define rainPin D5
 char rainStatusStr[10];
 
-// Temps de deep sleep entre les mesures
-int sleepTimeS = 30; // wait (seconds)
+// Duration of the deepsleep
+int sleepTimeS = 60; // wait (seconds)
 
 ICACHE_RAM_ATTR void cntAnemometre() {
   anemometreCnt++;
@@ -90,7 +90,7 @@ void readSendBatteryState() {
     reconnect();
   }
   battery = analogRead(analogPin);
-  batteryPct = ((battery-820.0)/(1024.0-820.0)*(100.0-0.0)); // interpolation linéaire 1v = 1024 (100%), 0.8v = 820 (0%)
+  batteryPct = ((battery-820.0)/(1024.0-820.0)*(100.0-0.0)); // linear interpolation 1v = 1024 (100%), 0.8v = 820 (0%)
   Serial.print("batterie = "); Serial.println(battery,1);
   Serial.print("% batterie = "); Serial.println(batteryPct,1);
   dtostrf(batteryPct, 1, 0, batteryPctStr);
@@ -129,9 +129,9 @@ void readSendAnemometer() {
   digitalWrite(powerPinAnemometre, HIGH);	// Turn the sensor ON
 	delay(10);
 
-  // Initialisation du PIN et création de l'interruption.
-  pinMode(anemometrePin, INPUT_PULLUP);          // Montage PullUp avec Condensateur pour éviter l'éffet rebond.
-  attachInterrupt(digitalPinToInterrupt(anemometrePin), cntAnemometre, FALLING); // CHANGE: Déclenche de HIGH à LOW ou de LOW à HIGH - FALLING : HIGH à LOW - RISING : LOW à HIGH.
+  // Init PIN and creation of interuption
+  pinMode(anemometrePin, INPUT_PULLUP);          
+  attachInterrupt(digitalPinToInterrupt(anemometrePin), cntAnemometre, FALLING); // CHANGE = HIGH to LOW or LOW to HIGH - FALLING : HIGH to LOW - RISING : LOW to HIGH.
 
   lastSendVent = millis();
 
@@ -141,19 +141,17 @@ void readSendAnemometer() {
   
   Serial.print("Temps pour le calcul = "); Serial.print(temps_sec); Serial.println(" sec");
 
-  // On calcul la vitesse du vent.
-  float vitesseVent = (((float)anemometreCnt) / (float)temps_sec) * 1.75 / 20 * 3.6;    // Vitesse du vent en km/h = (Nbre de tour / temps de comptage en sec) * 2,4
-  vitesseVent = round(vitesseVent * 10) / 10;                             // On tranforme la vitesse du vent à 1 décimale.
+  // Wind speed computation
+  float vitesseVent = (((float)anemometreCnt) / (float)temps_sec) * 1.75 / 20 * 3.6;    // Wind speed (km/h) = (Number of turns / duration in sec) * 2,4
+  vitesseVent = round(vitesseVent * 10) / 10;                            
 
   digitalWrite(powerPinAnemometre, LOW);	// Turn the sensor OFF
   
-  // On réinitialise les compteurs.
-  anemometreCnt = 0;                                          // Envoi des données, On réinitialise le compteur de vent à 0.
-  
-  
+  anemometreCnt = 0;                                  
+    
   // send mqtt message
   dtostrf(vitesseVent, 1, 0, vitesseVentStr);
-  // On affiche la vitesse du vent.
+  // Print wind speed
   Serial.print("Vitesse du vent = "); Serial.println(vitesseVent,1);
 
   if (!client.connected()) {
@@ -171,14 +169,14 @@ void setup() {
 
   Serial.begin(115200);
 
-  // Alimentation des capteurs anémomètre et pluie sur OFF
+  // Turn off sensor alimentations
   pinMode(powerPinRain, OUTPUT);
 	digitalWrite(powerPinRain, LOW);
 
   pinMode(powerPinAnemometre, OUTPUT);
 	digitalWrite(powerPinAnemometre, LOW);
 
-  // Initialisation Wifi et MQTT
+  // Wifi & MQTT initialization
   Serial.println("Initialisation...");
   setup_wifi();
   delay(2000);
@@ -186,19 +184,15 @@ void setup() {
   client.setCallback(callback);
   delay(2000);
  
-  // Initialisation du PIN et création de l'interruption.
-  pinMode(anemometrePin, INPUT_PULLUP);          // Montage PullUp avec Condensateur pour éviter l'éffet rebond.
-  attachInterrupt(digitalPinToInterrupt(anemometrePin), cntAnemometre, FALLING); // CHANGE: Déclenche de HIGH à LOW ou de LOW à HIGH - FALLING : HIGH à LOW - RISING : LOW à HIGH.
-
-  ///// Batterie: lecture et envoi sur serveur MQTT de l'état de charge
+  ///// Battery: read and send battery percentage to MQTT server
   readSendBatteryState();
   delay(2000);
   
-  ////// Anémomètre: lecture et envoi sur serveur MQTT
+  ////// Anemometer: read and send wind speed (km/h) to MQTT server
   readSendAnemometer();
   delay(2000);
   
-  ////// Détecteur de pluie: lecture et envoi sur serveur MQTT
+  ////// Rain detector: read and send rain status (1 or 0) to MQTT server
   readSendRainSensor();
   delay(2000);
 
