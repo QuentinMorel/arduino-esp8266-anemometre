@@ -27,8 +27,8 @@ The Wemos D1 mini already has an internal voltage divider that connects the A0 p
 
 
 # Sources
-https://arduinodiy.wordpress.com/2016/12/25/monitoring-lipo-battery-voltage-with-wemos-d1-minibattery-shield-and-thingspeak/
-https://github.com/StationMeteoDIY/anemometre/tree/main
-https://how2electronics.com/interfacing-anemometer-npn-pulse-output-with-arduino/
-https://lastminuteengineers.com/rain-sensor-arduino-tutorial/
+- https://arduinodiy.wordpress.com/2016/12/25/monitoring-lipo-battery-voltage-with-wemos-d1-minibattery-shield-and-thingspeak/
+- https://github.com/StationMeteoDIY/anemometre/tree/main
+- https://how2electronics.com/interfacing-anemometer-npn-pulse-output-with-arduino/
+- https://lastminuteengineers.com/rain-sensor-arduino-tutorial/
 
