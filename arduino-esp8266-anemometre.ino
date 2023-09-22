@@ -140,9 +140,10 @@ void readSendAnemometer() {
   int temps_sec = (millis() - lastSendVent) / 1000;
   
   Serial.print("Temps pour le calcul = "); Serial.print(temps_sec); Serial.println(" sec");
+  Serial.print("Nb pulsations par seconde = "); Serial.println(((float)anemometreCnt) / (float)temps_sec);
 
   // Wind speed computation
-  float vitesseVent = (((float)anemometreCnt) / (float)temps_sec) * 1.75 / 20 * 3.6;    // Wind speed (km/h) = (Number of turns / duration in sec) * 2,4
+  float vitesseVent = (((float)anemometreCnt) / (float)temps_sec) * 1.75 / 20.0 * 3.6;    // Wind speed (km/h) = (Number of turns / duration in sec) * 2,4
   vitesseVent = round(vitesseVent * 10) / 10;                            
 
   digitalWrite(powerPinAnemometre, LOW);	// Turn the sensor OFF
